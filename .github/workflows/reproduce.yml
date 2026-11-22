@@ -1,0 +1,72 @@
+name: Reproduce clang-cl exception bug
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "test.cpp"
+      - "test_noexcept.cpp"
+      - ".github/workflows/reproduce.yml"
+
+jobs:
+  reproduce:
+    runs-on: windows-2025
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile and test
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+
+          set "PATH=C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\Llvm\x64\bin;%PATH%"
+
+          clang-cl --version
+          cl
+
+          echo === Compiling ===
+
+          clang-cl /nologo /EHsc /Od /W4 /std:c++latest test.cpp /Fe:clang-test.exe
+          if errorlevel 1 exit /b 1
+
+          clang-cl /nologo /EHsc /Od /W4 /std:c++latest test_noexcept.cpp /Fe:clang-noexcept.exe
+          if errorlevel 1 exit /b 1
+
+          cl /nologo /EHsc /Od /W4 /std:c++latest test.cpp /Fe:msvc-test.exe
+          if errorlevel 1 exit /b 1
+
+          cl /nologo /EHsc /Od /W4 /std:c++latest test_noexcept.cpp /Fe:msvc-noexcept.exe
+          if errorlevel 1 exit /b 1
+
+          echo === clang-cl: Potentially-throwing pointer ===
+          clang-test.exe
+          if not "%ERRORLEVEL%"=="1" (
+            echo Unexpected result: clang-cl behavior may have changed.
+            exit /b 1
+          )
+
+          echo === clang-cl: noexcept pointer ===
+          clang-noexcept.exe
+          if not "%ERRORLEVEL%"=="42" (
+            echo Unexpected result from clang-cl with noexcept pointer.
+            exit /b 1
+          )
+
+          echo === MSVC: Potentially-throwing pointer ===
+          msvc-test.exe
+          if not "%ERRORLEVEL%"=="42" (
+            echo Unexpected result from MSVC.
+            exit /b 1
+          )
+
+          echo === MSVC: noexcept pointer ===
+          msvc-noexcept.exe
+          if not "%ERRORLEVEL%"=="42" (
+            echo Unexpected result from MSVC with noexcept pointer.
+            exit /b 1
+          )
+
+          echo All results match the expected behavior.
+          exit /b 0
